@@ -1,0 +1,899 @@
+---
+title: "STA5077Z - UnSupervised Learning Assignment 2"
+author: \textcolor{blue}{ALEX MIRUGWE - MRGALE005}
+date: '`r format(Sys.Date(), "%d-%B-%Y")`'
+output: 
+  pdf_document: 
+    fig_caption: yes
+    number_sections: yes
+bibliography: citation.bib
+linkcolor: black
+fontsize: 12pt
+header-includes:
+  - \usepackage{titling}
+  - \pretitle{\begin{center}
+  - \posttitle{\end{center}}
+    \includegraphics[width=2in,height=2in]{C:/Users/User/Documents/logo.jpg}\LARGE\\}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(tinytex.verbose = TRUE)
+
+```
+
+\pagebreak
+```{r, echo=FALSE}
+knitr::include_graphics("C:/Users/User/Documents/declaration.jpg")
+```
+
+\tableofcontents
+\pagebreak
+
+\newpage
+
+\listoffigures
+\listoftables
+\newpage
+
+# Abstract
+
+
+The goal of this project is to apply different dimensional reduction methods i.e. Principal Component Analysis (PCA), metric Multidimensional Scaling (MDS), and IsoMap to the MNIST handwritten digits data sets consisting of a greyscale image of digit 5 or 8 represented by one dimension vector of size 785 columns and Wisconsin Diagnostic Breast Cancer dataset-WDBC (source: UCI Machine Learning) consists of 569 data points classified as either malignant or benign to determine which methods and parameters work best on different types of data. We used the KNN algorithm to evaluate the performance of these dimensional reduction methods. KNN models were built both on the original dimension data sets and the dimensionally reduced data to classify digits in the MNIST data or patient's cancer status in the WDBC data. And the difference in the results was used to evaluate the impact of reducing the dimensions on accuracy.
+
+Reducing the dimensions of the MNIST handwritten digits data set, slightly improved the performance of the model's classification rate as it increased by only **0.4** i.e. from **98.5%** to **98.9%** for the IsoMap reduction method. PCA and metric MDS did not improve the performance as it reduced from **98.5%** to **96.75** for both methods. For the breast cancer data set, the model's performance only improved when PCA dimensionally reduced was considered. The model **100%** classified the patient's breast cancer status. Other reduction methods did not increase or reduce the classification accuracy from ***92.04%*** which was obtained with original data.
+
+\bigbreak
+
+\bigbreak
+
+**Keywords:** Classification,Dimensionality Reduction, High-dimensional Data, Principal Component Analysis, Multidimensional scaling, Isomaps Dimensionality Reduction, K-Nearest Neighbors(KNN).
+
+\newpage
+
+```{r  echo=FALSE,cache=FALSE, results=FALSE, warning=FALSE, include=FALSE, warning=FALSE}
+#Loading neccessary libraries
+library(tidyverse) #dplyr
+library(ggplot2) #visualization
+library(ggbiplot)
+library(gridExtra)
+library(cluster) #pam, silhouette functions
+library(factoextra) #fviz_cluster
+library(corrplot) #correlation matrix 
+library (plotrix) #fan plot
+library(fpc)
+library(caret)
+library(kohonen)
+library(dummies)
+library(rgeos)
+library(RDRToolbox) #IsoMap 
+library(vegan) #isomap 
+library("imager")
+library(smacof) # multidimensional scaling
+library(ggfortify) #biplot of PCAs
+```
+
+# Introduction
+
+In this assignment, we used two data sets i.e. MNIST handwritten digits consisting of a greyscale image of digit 5 or 8 represented by a one dimension vector of size 785 columns and Wisconsin Diagnostic Breast Cancer (WDBC) datasets to investigate whether applying dimensional reduction methods i.e. Principal Component Analysis (PCA), metric Multidimensional Scaling (MDS), and IsoMap to determine which methods and parameters work best on different types of data.
+
+
+# Modeling non dimensionally reduced data.
+
+These two data sets were split into both training and validation sets. The models were built on training sets using the KNN classification model for different values of the parameter k and evaluated on validation sets using the confusion matrices.
+
+## Exploratory Data Analysis (min_mnist data set)
+
+There are 10,000 images in the dataset each with a resolution of 28x28, and a numerical pixel value in greyscale. Every image is represented by a 28x28 matrix with each element of the matrix an integer between 0 and 255. The label of each image in the dataset is a handwritten digit of either 5 or 8.
+ 
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE}
+#reading handwriting dataset
+min_mnist <- read.csv("C:/Users/User/Documents/UNSL/min_mnist.csv",stringsAsFactors = FALSE)
+
+#converting the x5 variable to categorical format
+min_mnist$X5 <- as.factor(min_mnist$X5)
+#structure of the data
+str(min_mnist$X5)
+
+# Separating input values from handwritten digits 5 and 8.
+min_mnist_y <- min_mnist$X5
+min_mnist_x <- min_mnist[-1]
+
+min_mnist_x <- as.matrix(min_mnist_x)
+
+#scaling data
+min_mnist_x <- t(min_mnist_x/255)
+```
+
+```{r  echo=FALSE, warning=FALSE, fig.width=8,fig.height=4,fig.cap= "The figures show the digits of the first and second rows of the handwriting dataset. The digits are a true representation of what's in the data frame. "}
+par(mfrow = c(1,2))
+# extracting and ploting first and second rows
+array_3D <- array(min_mnist_x, c(28, 28, 456))
+mat_2D <- matrix(array_3D[,,1], nrow = 28, ncol = 28)
+plot(as.cimg(mat_2D),main = "Digit of row 1")
+
+mat_2D <- matrix(array_3D[,,2], nrow = 28, ncol = 28)
+plot(as.cimg(mat_2D),main = "Digit of row 2")
+
+```
+
+## Exploratory Data Analysis (Breast Cancer dataset )
+
+The Wisconsin Diagnostic Breast Cancer (WDBC) dataset consists of 569 data points classified as either malignant or benign. Data was computed from a digitized image of a fine needle aspirate (FNA) of a breast mass. Each instance contains 30 variables describing different characteristics of the cell nuclei present in the image.
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE}
+#read breast cancer dataset
+cancer <- read.csv("C:/Users/User/Documents/UNSL/WDBC.csv")
+
+#removing the id variable
+cancer <- cancer[-1]
+#converting the diagnosis variable to factor data type
+cancer$diagnosis <- as.factor(cancer$diagnosis)
+
+#getting the number of each categorical value
+table(cancer$diagnosis)
+
+t<- as.data.frame(cbind(diagnosis = c("Benign","Malignant"),count = c(357,212)))
+t$diagnosis <- as.factor(t$diagnosis)
+
+round(prop.table(table(cancer$diagnosis)) * 100, digits = 1)
+```
+
+```{r  echo=FALSE, warning=FALSE, fig.width=3,fig.height=3,fig.cap= "Shows a barplot of the total number of diagnoses per category. 62.7% (or 357) of the people who were diagnosed had Benign and 37.3 % (212 people) had Malignant."}
+#ploting the response variable value count
+  ggplot(t,aes(diagnosis,count,fill = diagnosis)) +
+  geom_bar(stat="identity",show.legend = F) +labs(x = "Diagnosis",y = "Diagnosis Count",
+                                   title = "Diagnosis Total Count") +
+  geom_text(aes(label = count, vjust = 1.5)) +
+   theme(plot.title = element_text(hjust = 1)) +
+   scale_color_manual(values = c("Red", "blue"))+
+  scale_fill_manual(values = c("Red", "Blue"))+ theme_classic()
+
+```
+
+\newpage
+
+```{r  echo=FALSE, warning=FALSE, fig.height = 10,fig.width = 12, fig.cap= "Histogram representation of the numeric variables in the dataset."}
+# histograms each attribute
+par(mfrow=c(5,6))
+for(i in 2:31) {
+hist(cancer[,i], main=names(cancer)[i],xlab = names(cancer)[i],col = "blue",
+     legend.text = unique(cancer$diagnosis))
+}
+
+```
+
+Apart from the a few variables like concavity_mean, concave.points_mean, perimeter_se,area_se, concavity_se, symmetry_se, and fractal_dimension_se which are left-skewed, values of other features are normally distributed as seen in the figure above.
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE,include=FALSE}
+corMatrix <- cancer[,c(2:31)]
+
+
+# Rename the colnames
+cNames <- c("rad_m","txt_m","per_m",
+                 "are_m","smt_m","cmp_m","con_m",
+                 "ccp_m","sym_m","frd_m",
+                 "rad_se","txt_se","per_se","are_se","smt_se",
+                 "cmp_se","con_se","ccp_se","sym_se",
+                 "frd_se","rad_w","txt_w","per_w",
+                 "are_w","smt_w","cmp_w","con_w",
+                 "ccp_w","sym_w","frd_w")
+
+colnames(corMatrix) <- cNames
+
+```
+
+```{r  echo=FALSE, warning=FALSE,include=FALSE,fig.width=10,fig.height=10,fig.cap= "The figure shows the correlation between the breast cancer dataset. "}
+#correlation between variables
+cormat <- round(cor(corMatrix[-1]),1)
+corrplot(cormat,method = "number")
+
+```
+
+## KNN Algorithm on min_mnist data set.
+
+Before training the model, the dataset was split into training and validation sets in a ratio of 4:1 respectively. The training set was used in building the model and the validation set in evaluating it. Evaluation was done using the confusion matrix method. Five models with different parameter k values were fitted and their performances are shown in the table below.
+
+\newpage
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE,eval=FALSE}
+set.seed(123)
+#data partitioning
+mnist_index <- createDataPartition(min_mnist$X5,p = .80,list = FALSE)
+
+#train set
+train_mnist <- min_mnist[mnist_index,]
+
+#test set
+test_mnist <- min_mnist[-mnist_index,]
+
+set.seed(123)
+# fit model
+mnist_model <- knn3(X5~., data=train_mnist, k=3)
+# summarize the fit
+print(mnist_model)
+# make predictions
+mnist_pred <- predict(mnist_model, test_mnist, type="class")
+# summarize accuracy
+mnist_confusion <- table(Predicted = mnist_pred,Actual =  test_mnist$X5)
+
+#accurancy
+mnist_acc <- sum(diag(mnist_confusion)/sum(mnist_confusion))
+round((mnist_acc)*100,2)
+```
+
+|       |k   |TN   |TP  |FN  |FP  |Accurancy(%)|
+|-------|----|-----|----|----|----|------------|
+|Model 1|2   |996  |971 |29  |4   |98.35       |
+|Model 2|3   |996  |973 |27  |4   |98.45       |
+|Model 3|5   |996  |974 |26  |4   |98.50       |
+|Model 4|7   |996  |971 |29  |4   |98.35       |
+|Model 5|13  |996  |970 |30  |4   |98.30       |
+
+Table: Shows the classification rate, True Negative, True Positive, False Negative, and False Positive of five models built using different values of the parameter k on the original handwriting digits data set of 784-dimensions.
+
+*k = 5* produced the highest accuracy of 98.50%. The performance is quite impressive as most of the digits are accurately predicted in the validation set.
+
+## KNN Algorithm on Breast Cancer dataset
+
+And since the dataset variables are different i.e. have different means and variances, therefore they were normalized before fitting the KNN model. In this, we did not want the model to depend on an arbitrary variable unit. After normalizing, the dataset was partitioned into training and validation sets in a ratio of 4:1 respectively. 
+
+The models that classify whether a patient is in a benign or malignant breast cancer state were built using the KNN algorithm. Different values of k chosen at random were used and findings are presented in the table below.
+
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE,eval=FALSE}
+set.seed(123)
+#data partitioning
+index<- createDataPartition(cancer$diagnosis,p = .80,list = FALSE)
+
+#train set
+train_set <- cancer[index,]
+
+#test set
+test_set <- cancer[-index,]
+
+set.seed(123)
+# fit model
+fit <- knn3(diagnosis~., data=train_set, k=9)
+# summarize the fit
+print(fit)
+# make predictions
+predictions <- predict(fit, test_set, type="class")
+# summarize accuracy
+confusion_m <- table(Predicted = predictions,Actual =  test_set$diagnosis)
+
+#accurancy
+acc <- sum(diag(confusion_m)/sum(confusion_m))
+round((acc)*100,2)
+```
+
+
+|       |k  |TN  |TP |FN |FP |Accurancy(%)|
+|-------|---|----|---|---|---|------------|
+|Model 1|2  |65  |35 |7  |6  |88.50       |
+|Model 2|3  |64  |38 |4  |7  |90.27       |
+|Model 3|5  |65  |39 |3  |9  |92.04       |
+|Model 4|7  |35  |38 |4  |6  |91.15       |
+|Model 5|9  |70  |38 |4  |6  |91.15       |
+
+Table: Shows the classification rate, True Negative, True Positive, False Negative, and False Positive of five models built using different values of the parameter k on the original breast cancer data set of 30-dimensions.
+
+For *k = 5*, the KNN model produced the highest classification rate of 92.04%, and increasing the K value beyond 5 couldn't increase the accuracy rate any further.
+
+
+# Dimension Reduction
+
+The handwriting (mnist) and breast cancer data sets were dimensionally reduced using Principal Component Analysis, Multidimensional scale, and IsoMap methods. After dimensional reduction, data sets were slipt into training and test sets. The KNN models were built on training sets using different k values and dimensions and then finally tested against the validation sets. This was done in an attempt to improve the performance of the KNN model on both data sets.
+
+## Principal Component Analysis (PCA)
+
+The PCA dimensionality reduction approach was used to reduce the dimensions of both data sets from 784 dimensions of the handwriting data set and 30 dimensions of the breast cancer data set to 6 dimensions.
+
+### Principal Component Analysis on min_mnist data set
+
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE,eval=FALSE}
+# Convert the features of the data: 
+min_mnist1 <- as.matrix(min_mnist[-1])
+
+#Normalizing the data
+min_mnist1 <- min_mnist1/255
+#principal component
+mnist_pca <- prcomp(min_mnist1, center = TRUE,scale. = FALSE)
+
+mnist_pca$rotation
+#obtaining eigen variables
+mnist_eigen<-get_eigenvalue(mnist_pca)
+mnist_eigen$variance.percent <- round(mnist_eigen$variance.percent,2)
+mnist_eigen$cumulative.variance.percent <- round(mnist_eigen$cumulative.variance.percent,2)
+mnist_eigen
+```
+
+|      |Proportion of Variance(%)|Cumulative Proportion(%)|
+|------|-------------------------|------------------------|
+|PCA1  |11.65                    |11.65                   |
+|PCA2  |8.12                     |19.77                   |
+|PCA3  |6.14                     |25.91                   |
+|PCA4  |5.34                     |31.25                   |
+|PCA5  |4.89                     |36.15                   |
+|PCA6  |4.05                     |40.19                   |
+|PCA7  |2.59                     |42.78                   |
+|PCA8  |2.48                     |45.26                   |
+|PCA9  |2.38                     |47.64                   |
+|PCA10 |2.21                     |49.85                   |
+
+Table: Shows the variance and cumulative percentage explained by the first ten(10) principal components.
+
+We obtained 784 principal components since the dataset had 784 features, but half of the proportion of variance in the data is explained by the first 10 principal components. The first principal component(PCA1) explains 11.65% of the total variance in the dataset. The second component explains 8.12% variance. Third component explains 6.14% variance and so on.
+
+\newpage
+
+### Principal Component Analysis on Cancer dataset
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE}
+# Convert the features of the data: 
+cancer1 <- as.matrix(cancer[,c(2:31)])
+
+#principal component
+cancer_pca <- prcomp(cancer1, center = TRUE,scale. = TRUE)
+summary(cancer_pca)
+
+str(cancer_pca)
+#extracting eigen variables
+eigen<-get_eigenvalue(cancer_pca)
+eigen
+
+#remaining variable names
+PCA <- c("PCA1","PCA2","PCA3","PCA4","PCA5","PCA6","PCA7","PCA8","PCA9","PCA10",
+         "PCA11","PCA12","PCA13","PCA14","PCA15","PCA16","PCA17","PCA18","PCA19","PCA20",
+         "PCA21","PCA22","PCA23","PCA24","PCA25","PCA26","PCA27","PCA28","PCA29","PCA30")
+eigen$variance.percent <- round(eigen$variance.percent,2)
+eigen$cumulative.variance.percent <- round(eigen$cumulative.variance.percent,2)
+eigen$eigenvalue <- round(eigen$eigenvalue,2)
+eigen <- cbind(PCA,eigen)
+
+barplot(eigen$variance.percent)
+
+```
+
+|                      |PC1   |PC2   |PC3    |PC4    |
+|----------------------|------|------|-------|-------|
+|Standard deviation    |3.6444|2.3857|1.67867|1.40735|
+|Proportion of Variance|0.4427|0.1897|0.09393|0.06602|
+|Cumulative Proportion |0.4427|0.6324|0.72636|0.79239|
+
+Table: Shows the first 4 Principal Components which explain most of the variation in the data.
+
+We obtained 30 principal components(we had 30 columns for the original data) each explaining a percentage of the total variation in the breast cancer dataset but most of this variation was explained by the first 4 principal components. PC1 explains 44.3% of the total variance, which means that almost half of the information in a dataset of 30 variables can be encapsulated by just the first principal component(PC1). PC2 explains 19% of the variation. PC1 and PC2 explain in total 63.3% of the total dataset variance, meaning by just these two principal components, you can get a quite accurate view of where it stands in relation to other samples.
+
+
+```{r  echo=FALSE, warning=FALSE,fig.width=8,fig.height=4,fig.cap= " Shows a barplot of variation explained by the 30 principal components. It's clearly seen that PCA1 and PCA2 explain most of the variation in the dataset."}
+#barplot of variation explained by differebt PCAs
+  ggplot(eigen,aes(x =reorder(PCA,variance.percent),variance.percent)) +
+  geom_bar(stat="identity",show.legend = F,fill = "blue") +labs(x = "Principal Compenents",y = "Proportion of Variance(%)",
+                                   title = "Barplot of the Principal Components")+ theme_classic()+
+  theme(plot.title = element_text(hjust = .5)) +
+  theme(axis.text.x = element_text(angle = 90))
+
+```
+
+\newpage
+
+```{r  echo=FALSE, warning=FALSE,fig.width=6,fig.height=4,fig.cap= "Biplot of the Breast Cancer variables onto the first two principal axes."}
+#biplot of the first two principal components
+autoplot(cancer_pca, data = cancer,  colour = 'diagnosis',
+                    loadings = FALSE, loadings.label = TRUE, loadings.colour = "green")
+``` 
+
+### KNN Algorithm on the min_mnist data set
+
+The data set was PCA dimensionally reduced to different dimensions and a KNN model was built for those different data sets. The data sets were split into training sets which were used to build the models and testing sets used in evaluating the performance of the models. The performance of these models is being shown in the table below.
+
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE,eval=FALSE}
+#Extracting the 6 dimensionals from the PCA reduced data (Handwriting data set)
+pc.mnist1 <- mnist_pca$x[,1]
+pc.mnist2 <- mnist_pca$x[,2]
+pc.mnist3 <- mnist_pca$x[,3]
+pc.mnist4 <- mnist_pca$x[,4]
+pc.mnist5 <- mnist_pca$x[,5]
+pc.mnist6 <- mnist_pca$x[,6]
+
+#target variable
+x5 <- min_mnist[1]
+#data frame of the 6-dimensional data.
+mnist_set = cbind(x5,pc.mnist1, pc.mnist2,pc.mnist3,pc.mnist4,pc.mnist5,pc.mnist6)
+
+set.seed(123)
+#data partitioning
+mnist_index2 <- createDataPartition(min_mnist$X5,p = .80,list = FALSE)
+
+#train set
+train_mnist1 <- mnist_set[mnist_index2,]
+
+#test set
+test_mnist1 <- mnist_set[-mnist_index2,]
+
+set.seed(123)
+# fit model
+fit_mnist <- knn3(X5~., data=train_mnist1, k=5)
+# summarize the fit
+print(fit_mnist)
+# make predictions
+prediction_mnist <- predict(fit_mnist, test_mnist1, type="class")
+# summarize accuracy
+confusion_mnist <- table(Predicted = prediction_mnist,Actual =  test_mnist1$X5)
+
+#accurancy
+acc_mnist <- sum(diag(confusion_mnist)/sum(confusion_mnist))
+round((acc_mnist)*100,2)
+```
+
+|Dimensions|k      |TN    |TP   |FN    |FP    |Accuracy(%) |
+|----------|-------|------|-----|------|------|------------|
+|2         |13     |710   |698  |302   |290   |70.4        |
+|3         |15     |952   |954  |46    |48    |95.3        |
+|4         |13     |963   |957  |43    |37    |96.0        |
+|5         |9      |967   |966  |34    |33    |96.65       |
+|6         |5      |964   |971  |29    |36    |96.75       |
+
+Table: Shows the classification rate, True Negative, True Positive, False Negative, and False Positive of KNN models built using different dimensions of PCA reduced handwriting data.
+
+KNN was used to classify the data before and after applying principal component dimensionality. We compared the performance of the model on different dimensions(2D-6D) of the data set. It was observed that the higher the dimensions(Principal Components) the higher the classification late. The highest classification rate was produced when six-dimensional data was considered. The performance of those different dimensional data is presented in the table above.
+
+### Conclusion.
+
+As can be noted in the Table below, the accuracy drops as we reduced the number of dimensions from the original 754 to 2D-6Ds. Using the original data set (with 784 variables) an accuracy of 98.5% was obtained, but after reducing the dimensions(2D-6D), the highest classification rate was 96.75% when 6D data was used. Therefore, we can conclude that by reducing the dimensionality of the data with Principal Components Analysis(PCA), the accuracy of KNN decreases.
+
+
+|Dimensions        |Accuracy(%)|
+|------------------|-----------|
+|784(Original Data)|98.50      |
+|784 to 2D         |70.4       |
+|784 to 3D         |95.3       |
+|784 to 4D         |96.0       |
+|784 to 5D         |96.65      |
+|784 to 6D         |96.75      |
+
+Table: Classification accuracy of the KNN model subjected to the original 784-dimensional handwriting digits data and the dimensionally reduced.
+
+
+### KNN Algorithm on Breast Cancer dataset
+
+After reducing the dimensions of the breast cancer data set to 2,3,4,5, and 6 dimensions using PCA, a KNN model was built on each of these individual sets. But before building these models, the data sets were split into training and validation sets. And the performance on these different dimensions is shown in the table below.
+
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE,eval=FALSE}
+set.seed(123)
+#PCA on breast cancer data
+pca.out <- princomp(cancer[,c(2:31)], cor=T,scores=T)
+#extracting the dimensional reduced data
+pca_cancer <- pca.out$scores
+
+#getting the six dimensions
+pc.comp1 <- -1*pca_cancer[,1]
+pc.comp2 <- -1*pca_cancer[,2]
+pc.comp3 <- -1*pca_cancer[,3]
+pc.comp4 <- -1*pca_cancer[,4]
+pc.comp5 <- -1*pca_cancer[,5]
+pc.comp6 <- -1*pca_cancer[,6]
+
+#target variable
+diagnosis <- cancer[1]
+#data frame of the 6-dimensional data
+pca_set = cbind(diagnosis,pc.comp1, pc.comp2,pc.comp3,pc.comp4,pc.comp5,pc.comp6)
+
+set.seed(123)
+#data partitioning
+index1 <- createDataPartition(pca_set$diagnosis,p = .80,list = FALSE)
+
+#train set
+train_pca <- pca_set[index1,]
+
+#test set
+test_pca <- pca_set[-index1,]
+
+set.seed(123)
+# fit model
+fit_pca <- knn3(diagnosis~., data=train_pca, k=5)
+# summarize the fit
+print(fit_pca)
+# make predictions
+prediction_pca <- predict(fit_pca, test_pca, type="class")
+# summarize accuracy
+confusion_pca <- table(Predicted = prediction_pca,Actual =  test_pca$diagnosis)
+
+#accurancy
+acc1 <- sum(diag(confusion_pca)/sum(confusion_pca))
+round((acc1)*100,2)
+
+```
+
+
+|Dimensions|k      |TN   |TP  |FN  |FP  |Accuracy(%) |
+|----------|-------|-----|----|----|----|------------|
+|2         |9      |69   |41  |1   |2   |96.46       |
+|3         |5      |68   |41  |1   |3   |96.46       |
+|4         |13     |70   |41  |1   |1   |98.23       |
+|5         |9      |71   |42  |0   |0   |100         |
+|6         |3      |71   |41  |1   |0   |99.12       |
+
+
+Table: Shows the classification rate, True Negative, True Positive, False Negative, and False Positive a KNN model built using different principal components(Dimensions) of breast cancer reduced data.
+
+A two-dimensional data produced the highest classification rate of 96.46% when the k parament value was 9. The same accuracy of 96.46% was obtained for a 3D dataset, but for this case, the highest accuracy was got for *k = 5*. For the four-dimensional dataset, the best accuracy(98.23%) was obtained for *k = 9*. 100% of the patients were correctly classified when 5-dimensional data was used. And finally, a 99.12% accuracy rate was produced by the 6-dimensional dataset. Overall, a 5D dataset with a parament k value of 9 produced the highest classification rate.
+
+### Conclusion.
+
+As seen in the table below, the accuracy of the KNN model at classifying the breast cancer patients increases as we reduce the number of dimensions from the original 30 to 2D-6D. Using the original data set(30D), the model accurately classified 92.04% of the patients. But after reducing the data set dimensions, 100% of the patients were accurately classified when the 5D data set was used.
+
+
+|Dimensions        |Accuracy(%)|
+|------------------|-----------|
+|30(Original Data) |92.04      |
+|30 to 2D          |96.46      |
+|30 to 3D          |96.46      |
+|30 to 4D          |98.23      |
+|30 to 5D          |100        |
+|30 to 6D          |99.12      |
+
+Table: Classification accuracy of the KNN model subjected to the original 30-dimensional breast cancer data and the dimensionally reduced.
+
+## Multidimensional Scaling (MDS)
+
+
+###  Multidimensional Scaling on min_mnist data set
+
+The handwriting digits data set was reduced from the 784 dimensions in the original data set to 6 dimensions using the *cmdscale()* function. Before applying the dimensional reduction function, we first obtained the pairwise distances using the *dist()* function and *euclidean* method.
+
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE,eval=FALSE}
+#pairwise distances of the handwriting data set
+mnist_mds <- dist(min_mnist[-1], method = "euclidean")
+#multidimensional scaling
+min_mnist_mds = cmdscale(mnist_mds,k=6)
+```
+
+###  Multidimensional Scaling on Cancer dataset
+
+The data set was dimensionally reduced from 30 dimensions to 6-dimensions using the *mds()*  function on Euclidean pairwise distances.
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE,eval=FALSE}
+#pairwise distances of the breast cancer data set
+cancer2 <- dist(cancer[-1], method = "euclidean")
+#multidimensional scaling
+cancer_mds = mds(delta = cancer2,ndim = 6, type = "ratio" )
+#creating a data frame of reduced data
+cancer_mds <- as.data.frame(cancer_mds$init)
+```
+
+\newpage
+
+### KNN Algorithm on min_mnist data set
+
+Several KNN models were built on different dimensions of data reduced using the multidimensional scaling method. These models were fitted on training sets and evaluated against the validation sets.
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE,eval=FALSE}
+#data frame of handwriting reduced data
+min_mnist_mds <- as.data.frame(min_mnist_mds)
+#obtaining the target variable and the reduced data
+min_mnist_mds <- cbind(x5,min_mnist_mds)
+#extracting the 6-dimensional data
+min_mnist_mds1 <- min_mnist_mds[1:7]
+
+set.seed(123)
+#data partitioning
+index_mnist <- createDataPartition(min_mnist_mds1$X5,p = .80,list = FALSE)
+
+#train set
+train_min_mnist <- min_mnist_mds1[index_mnist,]
+
+#test set
+test_min_mnist <- min_mnist_mds1[-index_mnist,]
+
+
+set.seed(123)
+# fit model
+mds_mnist_model <- knn3(X5~., data=train_min_mnist, k=5)
+# summarize the fit
+print(mds_mnist_model)
+#make predictions
+mds_mnist_pred <- predict(mds_mnist_model, test_min_mnist, type="class")
+# summarize accuracy
+confusion_mds <- table(Predicted = mds_mnist_pred,Actual =  test_min_mnist$X5)
+confusion_mds
+
+#accurancy
+acc_mds <- sum(diag(confusion_mds)/sum(confusion_mds))
+round((acc_mds)*100,2)
+
+```
+
+|Dimensions|k      |TN    |TP  |FN    |FP    |Accuracy(%) |
+|----------|-------|------|----|------|------|------------|
+|2         |13     |710   |698 |320   |290   |70.40       |
+|3         |15     |952   |954 |46    |48    |95.3        |
+|4         |15     |964   |956 |44    |36    |96          |
+|5         |9      |967   |966 |34    |33    |96.65       |
+|6         |5      |964   |971 |29    |36    |96.75       |
+
+Table: Shows the classification rate, True Negative, True Positive, False Negative, and False Positive a KNN model built using multidimensional scaling handwriting reduced data.
+
+At first glance, the higher the number of dimensions considered while building the KNN model on the handwriting data set, the higher the classification accuracy. The model achieved its highest accuracy of 96.75% when 6-dimensions of the data were used.  A look at the table above, it's observed that as we increase the number of dimensions, the best performance is achieved with smaller k values.
+
+### Conclusion.
+
+Looking at the table below, the model performs well at classifying digits (i.e. 5 and 8) when the original data set of 784 dimensions is used. Reducing the size of the data using multidimensional scaling seems not to improve the classification accuracy of the KNN model.
+
+
+|Dimensions        |Accuracy(%)|
+|------------------|-----------|
+|784(Original Data)|98.50      |
+|784 to 2D         |70.40      |
+|784 to 3D         |95.3       |
+|784 to 4D         |96.0       |
+|784 to 5D         |96.65      |
+|784 to 6D         |96.75      |
+
+Table: Classification accuracy of the KNN model on the original and multidimensional scaling reduced data sets.
+
+\newpage
+
+### KNN Algorithm on Breast Cancer dataset
+
+The breast cancer patients were classified using the KNN model which was built on different dimensions of data obtained after using the multidimensional scaling method.
+
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE,eval=FALSE}
+#data frame of target and breast cancer reduced data
+cancer_mds <- cbind(diagnosis,cancer_mds)
+#6-dimensional data
+cancer_mds1 <- cancer_mds[1:7]
+
+set.seed(123)
+#data partitioning
+index2 <- createDataPartition(cancer_mds1$diagnosis,p = .80,list = FALSE)
+
+#train set
+train_cmd <- cancer_mds1[index2,]
+colnames(train_cmd) <- c("diagnosis", "Dim.1", "Dim.2","Dim.3","Dim.4","Dim.5","Dim.6")
+
+#test set
+test_cmd <- cancer_mds1[-index2,]
+colnames(test_cmd) <- c("diagnosis", "Dim.1", "Dim.2","Dim.3","Dim.4","Dim.5","Dim.6")
+
+set.seed(123)
+# fit model
+fit_cmd <- knn3(diagnosis~., data=train_cmd, k=5)
+# summarize the fit
+print(fit_cmd)
+# make predictions
+prediction_cmd <- predict(fit_cmd, test_cmd, type="class")
+# summarize accuracy
+confusion_cmd <- table(Predicted = prediction_cmd,Actual =  test_cmd$diagnosis)
+confusion_cmd
+
+#accurancy
+acc2 <- sum(diag(confusion_cmd)/sum(confusion_cmd))
+round((acc2)*100,2)
+```
+
+
+|Dimensions|k      |TN   |TP  |FN  |FP  |Accuracy(%) |
+|----------|-------|-----|----|----|----|------------|
+|2         |3      |65   |39  |3   |6   |92.04       |
+|3         |3      |65   |39  |3   |6   |92.04       |
+|4         |3      |65   |39  |3   |6   |92.04       |
+|5         |3      |65   |39  |3   |6   |92.04       |
+|6         |3      |65   |39  |3   |6   |92.04       |
+
+Table: Shows the classification rate, True Negative, True Positive, False Negative, and False Positive a KNN model built using different dimensions of data reduced using the multidimensional scaling.
+
+Using different dimensions (2D to 6D) of the breast cancer data set reduced using multidimensional scaling method, the accuracy classification rate is the same throughout regardless of the number of dimensions considered in building the model.
+
+
+### Conclusion.
+
+We can conclude by saying that reducing the number of dimensions of the breast cancer data set from 30D to 2,3,4,5, and 6 dimensions using the multidimensional scaling method seems not to improve the performance of the model. The model built on the original data (one with 30-dimensions) and dimensionally reduced data (2D to 6D) produced the same accuracy rate of 92.04%. 
+
+##  IsoMAP
+
+Using Isomap dimensional reduction method, both handwriting and breast cancer data sets were dimensionally reduced to 2,3,4,5, and 6 dimensions using the *Isomap()* function with  *k = 10* neighbours.
+
+###  IsoMAP on min_mnist data set
+
+The handwriting digits data set was dimensionally reduced from it's original 784 dimensions to 6-dimensions. This was achieved with the help of the *Isomap()* function.
+
+
+```{r  echo=FALSE, warning=FALSE,include=FALSE,eval=FALSE}
+# compute Euclidean distance matrix
+D <- dist(min_mnist[,2:784], method="euclidean")
+
+# apply Isomap with k-NN graph distance matrix
+iso_mnist <- isomap(D, ndim=6, k=5)
+```
+
+###  IsoMAP on Cancer dataset
+
+The breast cancer data set was reduced from 30 dimensions to 6 dimensions using the *Isomap()* function applied to the matrix set of the data.
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE,eval=FALSE}
+#matrix data frame of the cancer data set
+cancer_iso = as.matrix(cancer[,2:31])
+#isomap dimensional reduction
+iso_cancer = Isomap(data=cancer_iso, dims=6, k=10)
+```
+
+### KNN Algorithm on min_mnist data set
+
+After dimensionally reducing the size of the handwriting data set (min_mnist) to different dimensions (i.e. 2-to-6Ds), KNN model was trained on each of these individual reduced sets to classify whether the digit is 5 or 8. The performance of these models is presented in the table below.
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE,eval=FALSE}
+#data frame of the dimensional reduced data
+min_mnist_iso <- as.data.frame(iso_mnist$points)
+#target variable
+x5 <- min_mnist[1]
+#data frame of taeget and reduced data
+min_mnist_iso <- cbind(x5,min_mnist_iso)
+#6-dimensional data
+min_mnist_iso1 <- min_mnist_iso[1:7]
+
+set.seed(123)
+#data partitioning
+index_iso <- createDataPartition(min_mnist_iso1$X5,p = .80,list = FALSE)
+
+#train set
+train_min_iso <- min_mnist_iso1[index_iso,]
+
+#test set
+train_min_iso <- min_mnist_iso1[-index_iso,]
+
+
+set.seed(123)
+ #fit model
+iso_mnist_model <- knn3(X5~., data=train_min_iso, k=3)
+# summarize the fit
+print(iso_mnist_model)
+# make predictions
+iso_mnist_pred <- predict(iso_mnist_model, train_min_iso, type="class")
+# summarize accuracy
+confusion_iso <- table(Predicted = iso_mnist_pred,Actual =  train_min_iso$X5)
+confusion_iso
+
+#accurancy
+acc_iso <- sum(diag(confusion_iso)/sum(confusion_iso))
+round((acc_iso)*100,2)
+```
+
+|Dimensions|k      |TN    |TP  |FN    |FP    |Accuracy(%) |
+|----------|-------|------|----|------|------|------------|
+|2         |7      |989   |976 |24    |11    |98.25       |
+|3         |3      |991   |977 |23    |9     |98.4        |
+|4         |3      |986   |985 |15    |14    |98.55       |
+|5         |3      |993   |982 |18    |7     |98.75       |
+|6         |3      |994   |984 |16    |6     |98.9        |
+
+Table: Shows the classification rate, True Negative, True Positive, False Negative and False Positive a KNN model built on isomap dimensionally reduced data.
+
+When we look at the table above, it’s seen that the highest classification rate of 98.9% was produced when we considered the 6-dimensional data. The performance is quite amazing on all dimensions, meaning the variation in the handwriting dataset is well captured across different dimensions.
+
+### Conclusion.
+
+The table shows how the KNN model performed at classifying the digits 5 and 8 in the handwriting data set on the original data set of 784 dimensions and also the isomap dimensionally reduced data. The performance seems to increase from that of the original data when 4,5 and 6 dimensions are considered. But this improvement is quite small.
+
+|Dimensions        |Accuracy(%)|
+|------------------|-----------|
+|784(Original Data)|98.50      |
+|784 to 2D         |98.25      |
+|784 to 3D         |98.4       |
+|784 to 4D         |98.55      |
+|784 to 5D         |98.75      |
+|784 to 6D         |98.9       |
+
+Table: Classification accuracy of the KNN model on the original and isomap dimensionally reduced data.
+
+### KNN Algorithm on Breast Cancer dataset
+
+The KNN model was built on the training set of the breast cancer data set dimensionally reduced to 2,3,4,5, and 6 dimensions using Isomap method and evaluated against the validation set. The performance of the model is presented in the table below.
+
+
+```{r  echo=FALSE, warning=FALSE, include=FALSE,eval=FALSE}
+#data frame of the breast cancer isomap reduced data
+iso_cancer <- as.data.frame(iso_cancer)
+#combining target variable and the 6-dimensional data
+iso_cancer_data <- cbind(diagnosis,iso_cancer[1:6])
+#making it a data frame
+iso_cancer_data <- as.data.frame(iso_cancer_data)
+
+set.seed(123)
+#data partitioning
+index3 <- createDataPartition(iso_cancer_data$diagnosis,p = .80,list = FALSE)
+
+#train set
+train_iso <- iso_cancer_data[index3,]
+
+#test set
+test_iso <- iso_cancer_data[-index3,]
+
+set.seed(123)
+# fit model
+fit_iso <- knn3(diagnosis~., data=train_iso, k=7)
+# summarize the fit
+print(fit_iso)
+# make predictions
+prediction_iso <- predict(fit_iso, test_iso, type="class")
+# summarize accuracy
+confusion_iso <- table(Predicted = prediction_iso,Actual =  test_iso$diagnosis)
+confusion_iso
+
+#accurancy
+acc3 <- sum(diag(confusion_iso)/sum(confusion_iso))
+round((acc3)*100,2)
+```
+
+|Dimensions|k      |TN   |TP  |FN  |FP  |Accuracy(%) |
+|----------|-------|-----|----|----|----|------------|
+|2         |5      |65   |37  |5   |6   |90.27       |
+|3         |5      |66   |37  |5   |5   |91.15       |
+|4         |3      |65   |39  |3   |6   |92.04       |
+|5         |7      |66   |38  |4   |5   |92.04       |
+|6         |7      |66   |38  |4   |5   |92.04       |
+
+Table: Shows the classification rate, True Negative, True Positive, False Negative, and False Positive a KNN model built using different dimensions of data reduced using the Isomap dimensionality reduction approach.
+
+The KNN model produced the highest classification rate of 91.04% when 4-dimensions of data was used, and this accuracy does not increase further when 5D and 6D are being used. Looking at the table above, different dimensions (i.e. 2D to 6D) relatively produce the same accuracy.
+
+
+### Conclusion.
+
+As observed from the table below, reducing the dimensions of the data using the IsoMap method does not improve or reduce the performance of the model from that obtained when the original set of 30-dimensions was used. The performance only slightly reduced when 2D and 3D data sets were used.
+
+
+|Dimensions        |Accuracy(%)|
+|------------------|-----------|
+|30(Original Data) |92.04      |
+|30 to 2D          |90.27      |
+|30 to 3D          |91.15      |
+|30 to 4D          |92.04      |
+|30 to 5D          |92.04      |
+|30 to 6D          |92.04      |
+
+Table: Classification accuracy of the model trained on the original 30-dimensional breast cancer data and Isomap reduced data sets of 2 to 6-dimensions.
+
+\newpage
+
+# Conclusion
+
+Considering the handwriting data set, we can conclude that the KNN model performs well at classifying the 5 and 8 digits when we used the isomap method in reducing the number of dimensions. The overall best accuracy was 98.90%. In the general, the performance is superb regardless of whether a model is built on the original or dimensionally reduced data.
+
+
+|                            |Accuracy(%)|
+|----------------------------|-----------|
+|Original Data set           |98.50      |
+|Principal Compenent Analysis|96.75      |
+|Multidimensional Scaling    |96.75      |
+|Isomap                      |98.90      |
+
+Table: Shows the performance of the KNN model on the original and dimensionally reduced handwriting data set.
+
+For the breast cancer data set, the KNN model managed to 100% classify the patient's cancer status when PCA dimensionally reduced data was considered. For other-dimensional reduction methods i.e. Multidimensional Scaling and Isomap seem not to improve the performance of the model from the classification rate of 92.04% which was registered on the original data set.
+
+|                            |Accuracy(%)|
+|----------------------------|-----------|
+|Original Data set           |92.04      |
+|Principal Compenent Analysis|100        |
+|Multidimensional Scaling    |92.04      |
+|Isomap                      |92.04      |
+
+Table: Shows the performance of the KNN model on the original and dimensionally reduced breast cancer data set.
+
+\newpage
+# Appendix 
+
+```{r  ref.label=knitr::all_labels(), echo=TRUE,eval=FALSE}
+
+```
+
+
+
